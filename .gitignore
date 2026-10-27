@@ -1,2 +1,44 @@
-.env.local.example
+# Environment files
 .env
+.env.*
+!.env.local.example
+
+# Next.js
+.next/
+out/
+
+# Dependencies
+node_modules/
+
+# TypeScript
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local data and databases
+hirefair-data.json
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs and test coverage
+*.log
+coverage/
+.nyc_output/
+
+# Deployment and tooling
+.vercel/
+.turbo/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
