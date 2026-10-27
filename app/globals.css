@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --cream: #f4ede1;
+  --cream-deep: #efe5d5;
+  --ink: #2b241d;
+  --ink-soft: #6f6357;
+  --accent: #b5763f;
+  --hairline: rgba(43,36,29,.12);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--cream);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
