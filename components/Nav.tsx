@@ -5,8 +5,7 @@ import { usePathname } from 'next/navigation'
 const navItems = [
   { href: '/app', label: 'Dashboard' },
   { href: '/app/screening', label: 'Screening' },
-  { href: '/app/fairness', label: 'Fairness Audit' },
-  { href: '/app/debiasing', label: 'Debiasing' },
+  { href: '/app/fairness', label: 'Fairness Check' },
 ]
 
 export default function Nav() {
