@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import FileUpload from '@/components/FileUpload'
 import type { BiasAuditRequest, BiasAuditResponse } from '@/lib/types'
 
 export default function Home() {
@@ -70,18 +71,20 @@ export default function Home() {
             <textarea
               value={jobDescription}
               onChange={(e) => setJobDescription(e.target.value)}
-              placeholder="Paste your job description here…"
-              className="w-full h-32 p-4 rounded-xl border border-ink/10 bg-cream/50 resize-none focus:outline-none focus:ring-2 focus:ring-accent/30 text-sm"
+              placeholder="Paste your job description here, or upload a file…"
+              className="w-full h-32 p-4 rounded-xl border border-ink/10 bg-cream/50 resize-none focus:outline-none focus:ring-2 focus:ring-accent/30 text-sm mb-3"
             />
+            <FileUpload label="Or upload a job description file" onFileContent={setJobDescription} />
           </div>
           <div className="mb-4">
             <label className="block text-sm font-medium mb-2 text-ink-soft">Resume (optional)</label>
             <textarea
               value={resume}
               onChange={(e) => setResume(e.target.value)}
-              placeholder="Paste a sample resume for counterfactual testing…"
-              className="w-full h-24 p-4 rounded-xl border border-ink/10 bg-cream/50 resize-none focus:outline-none focus:ring-2 focus:ring-accent/30 text-sm"
+              placeholder="Paste a sample resume for counterfactual testing, or upload a file…"
+              className="w-full h-24 p-4 rounded-xl border border-ink/10 bg-cream/50 resize-none focus:outline-none focus:ring-2 focus:ring-accent/30 text-sm mb-3"
             />
+            <FileUpload label="Or upload a resume file" onFileContent={setResume} />
           </div>
           <button
             onClick={handleAudit}
