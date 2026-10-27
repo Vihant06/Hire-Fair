@@ -5,20 +5,17 @@ export default function DebiasingPage() {
   const [experiments, setExperiments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
+  const [error, setError] = useState('')
 
+  // Guided workflow form state
   const [form, setForm] = useState({
     name: '',
-    baseline_predictions: '',
-    baseline_labels: '',
-    baseline_protected: '',
-    mitigation_predictions: '',
-    mitigation_labels: '',
-    mitigation_protected: '',
-    mitigation_method: 'threshold',
-    config: {
-      description: '',
-      notes: ''
-    }
+    description: '',
+    mitigation_method: 'threshold', // 'threshold' | 'reweight'
+    // Preset evaluation data or custom csv string
+    predictions: '1,0,1,1,0,0,1,1,0,1,0,1',
+    labels: '1,0,1,0,0,0,1,1,0,1,0,0',
+    protected_groups: 'Group A,Group A,Group A,Group A,Group A,Group A,Group B,Group B,Group B,Group B,Group B,Group B',
   })
 
   useEffect(() => {
@@ -39,154 +36,259 @@ export default function DebiasingPage() {
     }
   }
 
-  async function handleCreate() {
-    if (!form.name) {
-      alert('Experiment name required')
+  async function handleCreateExperiment() {
+    if (!form.name.trim()) {
+      setError('Please provide an experiment name.')
+      return
+    }
+
+    const preds = form.predictions.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n))
+    const labs = form.labels.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n))
+    const prot = form.protected_groups.split(',').map(s => s.trim()).filter(s => s)
+
+    if (preds.length === 0 || labs.length === 0 || prot.length === 0) {
+      setError('Prediction, label, and group arrays cannot be empty.')
+      return
+    }
+    if (preds.length !== labs.length || preds.length !== prot.length) {
+      setError('All data arrays must have equal length.')
       return
     }
 
     setCreating(true)
+    setError('')
     try {
       const res = await fetch('/api/fairness', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: form.name,
-          config: form.config,
-          baseline_predictions: form.baseline_predictions.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)),
-          baseline_labels: form.baseline_labels.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)),
-          baseline_protected: form.baseline_protected.split(',').map(s => s.trim()).filter(s => s),
-          mitigation_predictions: form.mitigation_predictions.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)),
-          mitigation_labels: form.mitigation_labels.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)),
-          mitigation_protected: form.mitigation_protected.split(',').map(s => s.trim()).filter(s => s),
+          baseline_predictions: preds,
+          baseline_labels: labs,
+          baseline_protected: prot,
           mitigation_method: form.mitigation_method,
+          config: {
+            description: form.description || 'Guided mitigation experiment',
+          }
         })
       })
-      if (!res.ok) throw new Error('Failed to create')
-      loadExperiments()
-      resetForm()
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Failed to create experiment')
+      }
+
+      await loadExperiments()
+      setForm({
+        name: '',
+        description: '',
+        mitigation_method: 'threshold',
+        predictions: '1,0,1,1,0,0,1,1,0,1,0,1',
+        labels: '1,0,1,0,0,0,1,1,0,1,0,0',
+        protected_groups: 'Group A,Group A,Group A,Group A,Group A,Group A,Group B,Group B,Group B,Group B,Group B,Group B',
+      })
     } catch (e: any) {
-      alert(e.message)
+      setError(e.message || 'Failed to create experiment')
     } finally {
       setCreating(false)
     }
   }
 
-  function resetForm() {
-    setForm({
-      name: '',
-      baseline_predictions: '',
-      baseline_labels: '',
-      baseline_protected: '',
-      mitigation_predictions: '',
-      mitigation_labels: '',
-      mitigation_protected: '',
-      mitigation_method: 'threshold',
-      config: { description: '', notes: '' }
-    })
+  async function handleDelete(id: string) {
+    if (!confirm('Are you sure you want to delete this experiment?')) return
+    try {
+      const res = await fetch(`/api/fairness?id=${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        loadExperiments()
+      }
+    } catch (e) {
+      console.error(e)
+    }
   }
 
   return (
     <main className="max-w-6xl mx-auto px-6 py-8">
-      <h1 className="font-display font-semibold text-3xl mb-8">Debiasing Experiments</h1>
+      <div className="mb-8">
+        <span className="font-mono text-xs uppercase tracking-wider text-accent bg-accent/10 px-3 py-1 rounded-full">
+          Algorithmic Debiasing
+        </span>
+        <h1 className="font-display font-semibold text-3xl mt-3">Mitigation & Debiasing Experiments</h1>
+        <p className="text-ink-soft mt-1">
+          Test supported bias mitigation strategies (threshold adjustment and reweighting) to reduce disparate impact while preserving model accuracy.
+        </p>
+      </div>
 
-      {/* Create Experiment */}
-      <div className="bg-white/60 backdrop-blur-xl border border-white/50 rounded-2xl p-6 mb-8">
-        <h2 className="font-display font-semibold text-xl mb-4">Create New Experiment</h2>
+      {/* Guided Create Experiment Card */}
+      <div className="bg-white/60 backdrop-blur-xl border border-white/50 rounded-2xl p-6 shadow-sm mb-12">
+        <h2 className="font-display font-semibold text-xl mb-2">Create New Mitigation Experiment</h2>
         <p className="text-sm text-ink-soft mb-6">
-          Record baseline vs mitigation results for fairness experiments. All arrays must be comma-separated and equal length.
+          Configure a debiasing run. HireFair computes baseline fairness metrics, applies the selected mitigation algorithm, and records a comparison summary.
         </p>
 
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
+            {error}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium mb-2 text-ink-soft">Experiment Name</label>
+          <div>
+            <label className="block text-xs font-medium text-ink-soft mb-1">Experiment Name *</label>
             <input
               type="text"
               value={form.name}
-              onChange={(e) => setForm({...form, name: e.target.value})}
-              placeholder="e.g. Screening v1.2 - Gender Debiasing"
-              className="w-full p-3 rounded-xl border border-ink/10 bg-white/50 focus:outline-none focus:ring-2 focus:ring-accent/30 text-sm"
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              placeholder="e.g. Engineering Candidate Screening v1.2"
+              className="w-full p-3 rounded-xl border border-ink/10 bg-white/50 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
             />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-ink-soft mb-1">Mitigation Strategy *</label>
+            <select
+              value={form.mitigation_method}
+              onChange={(e) => setForm({ ...form, mitigation_method: e.target.value })}
+              className="w-full p-3 rounded-xl border border-ink/10 bg-white/50 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+            >
+              <option value="threshold">Threshold Adjustment (Post-processing)</option>
+              <option value="reweight">Training-Data Reweighting (Pre-processing)</option>
+            </select>
           </div>
 
           <div className="md:col-span-2">
-            <label className="block text-sm font-medium mb-2 text-ink-soft">Description</label>
-            <textarea
-              value={form.config.description}
-              onChange={(e) => setForm({...form, config: {...form.config, description: e.target.value}})}
-              placeholder="What model, dataset, and hypothesis are you testing?"
-              className="w-full h-20 p-3 rounded-xl border border-ink/10 bg-white/50 font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-accent/30"
+            <label className="block text-xs font-medium text-ink-soft mb-1">Description & Notes</label>
+            <input
+              type="text"
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder="e.g. Adjusted decision threshold to balance positive rates between Group A and Group B."
+              className="w-full p-3 rounded-xl border border-ink/10 bg-white/50 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
             />
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-          <div>
-            <h3 className="font-medium mb-3 text-ink-soft border-b border-ink/10 pb-2">Baseline Model</h3>
-            <InputArea label="Predictions (0/1)" value={form.baseline_predictions} onChange={(v: string) => setForm({...form, baseline_predictions: v})} placeholder="1,0,1,1,0,0..." />
-            <InputArea label="Labels (0/1)" value={form.baseline_labels} onChange={(v: string) => setForm({...form, baseline_labels: v})} placeholder="1,0,1,0,0,0..." />
-            <InputArea label="Protected Groups" value={form.baseline_protected} onChange={(v: string) => setForm({...form, baseline_protected: v})} placeholder="male,female,male,female..." />
-          </div>
-          <div>
-            <h3 className="font-medium mb-3 text-ink-soft border-b border-ink/10 pb-2">Mitigated Model</h3>
-            <select
-              value={form.mitigation_method}
-              onChange={(e) => setForm({...form, mitigation_method: e.target.value})}
-              className="w-full p-3 rounded-xl border border-ink/10 bg-white/50 focus:outline-none focus:ring-2 focus:ring-accent/30 mb-3"
-            >
-              <option value="threshold">Threshold adjustment</option>
-              <option value="reweight">Reweighting</option>
-              <option value="none">None (compare separate runs)</option>
-            </select>
-            <InputArea label="Predictions (0/1)" value={form.mitigation_predictions} onChange={(v: string) => setForm({...form, mitigation_predictions: v})} placeholder="1,0,1,1,0,0..." />
-            <InputArea label="Labels (0/1)" value={form.mitigation_labels} onChange={(v: string) => setForm({...form, mitigation_labels: v})} placeholder="1,0,1,0,0,0..." />
-            <InputArea label="Protected Groups" value={form.mitigation_protected} onChange={(v: string) => setForm({...form, mitigation_protected: v})} placeholder="male,female,male,female..." />
+        {/* Data Inputs */}
+        <div className="border-t border-ink/10 pt-6 mb-6">
+          <h3 className="font-medium text-sm text-ink mb-2">Evaluation Dataset (Comma-Separated)</h3>
+          <p className="text-xs text-ink-soft mb-4">
+            Provide aligned arrays for model predictions (0/1), ground-truth labels (0/1), and protected group names.
+          </p>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-ink-soft mb-1">Predictions (0 or 1)</label>
+              <input
+                type="text"
+                value={form.predictions}
+                onChange={(e) => setForm({ ...form, predictions: e.target.value })}
+                className="w-full p-2.5 rounded-xl border border-ink/10 bg-white/50 font-mono text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-ink-soft mb-1">Ground-Truth Labels (0 or 1)</label>
+              <input
+                type="text"
+                value={form.labels}
+                onChange={(e) => setForm({ ...form, labels: e.target.value })}
+                className="w-full p-2.5 rounded-xl border border-ink/10 bg-white/50 font-mono text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-ink-soft mb-1">Protected Group Labels</label>
+              <input
+                type="text"
+                value={form.protected_groups}
+                onChange={(e) => setForm({ ...form, protected_groups: e.target.value })}
+                className="w-full p-2.5 rounded-xl border border-ink/10 bg-white/50 font-mono text-xs"
+              />
+            </div>
           </div>
         </div>
 
-        <button
-          onClick={handleCreate}
-          disabled={creating}
-          className="bg-ink text-cream px-6 py-3 rounded-xl font-medium hover:opacity-90 transition disabled:opacity-50"
-        >
-          {creating ? 'Saving…' : 'Save Experiment →'}
-        </button>
+        <div className="flex justify-end">
+          <button
+            onClick={handleCreateExperiment}
+            disabled={creating}
+            className="bg-ink text-cream px-6 py-3 rounded-xl font-medium text-sm hover:opacity-90 transition shadow-sm disabled:opacity-50"
+          >
+            {creating ? 'Executing Mitigation & Saving…' : 'Run Mitigation Experiment →'}
+          </button>
+        </div>
       </div>
 
-      {/* Experiment List */}
-      <div className="bg-white/60 backdrop-blur-xl border border-white/50 rounded-2xl p-6">
-        <h2 className="font-display font-semibold text-xl mb-4">Saved Experiments</h2>
+      {/* Saved Experiments Section */}
+      <div className="bg-white/60 backdrop-blur-xl border border-white/50 rounded-2xl p-6 shadow-sm">
+        <h2 className="font-display font-semibold text-xl mb-4">Saved Mitigation Experiments</h2>
+
         {loading ? (
-          <p className="text-ink-soft">Loading…</p>
+          <p className="text-ink-soft text-sm">Loading experiments…</p>
         ) : experiments.length === 0 ? (
-          <p className="text-ink-soft text-sm">No experiments yet. Create one above to start tracking debiasing results.</p>
+          <p className="text-ink-soft text-sm">No debiasing experiments recorded yet. Run your first experiment above.</p>
         ) : (
-          <div className="space-y-4">
-            {experiments.map((exp: any) => (
-              <div key={exp.id} className="border border-ink/10 rounded-xl p-4 hover:bg-ink/5 transition">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h3 className="font-medium text-ink">{exp.name}</h3>
-                    <p className="text-xs text-ink-soft mt-1">{exp.config?.description || 'No description'}</p>
-                    <p className="text-xs text-ink/50 mt-1">Created: {new Date(exp.created_at).toLocaleString()}</p>
-                  </div>
-                  <div className="text-right text-sm">
-                    {exp.baseline_metrics && exp.mitigation_metrics && (
-                      <div className="space-y-1">
-                        <div className="flex gap-4">
-                          <span className="text-ink-soft">DP: {exp.baseline_metrics.demographic_parity_difference?.toFixed(4)} → {exp.mitigation_metrics.demographic_parity_difference?.toFixed(4)}</span>
-                          <span className="text-ink-soft">EO: {exp.baseline_metrics.equalized_odds_difference?.toFixed(4)} → {exp.mitigation_metrics.equalized_odds_difference?.toFixed(4)}</span>
-                        </div>
-                        <span className="text-green-600">
-                          ΔDP: {exp.improvement?.dp_diff_reduction?.toFixed(4)} | ΔEO: {exp.improvement?.eo_diff_reduction?.toFixed(4)}
+          <div className="space-y-6">
+            {experiments.map((exp: any) => {
+              const base = exp.baseline_metrics || {}
+              const mit = exp.mitigation_metrics || {}
+              const imp = exp.improvement || {}
+
+              return (
+                <div key={exp.id} className="border border-ink/10 rounded-2xl p-6 bg-cream/20 shadow-sm space-y-4">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-3">
+                        <h3 className="font-display font-semibold text-lg text-ink">{exp.name}</h3>
+                        <span className="text-xs font-mono uppercase bg-accent/10 text-accent px-2.5 py-0.5 rounded-full">
+                          {exp.mitigation_method || 'threshold'}
                         </span>
                       </div>
-                    )}
-                    {exp.status === 'pending' && <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full">Pending</span>}
+                      <p className="text-xs text-ink-soft mt-1">{exp.config?.description || 'No description provided.'}</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="text-xs text-ink-soft font-mono">
+                        {new Date(exp.created_at).toLocaleString()}
+                      </span>
+                      <button
+                        onClick={() => handleDelete(exp.id)}
+                        className="text-xs text-red-600 hover:text-red-800 font-medium px-3 py-1 rounded-lg border border-red-200 bg-white/50"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Metrics Comparison Grid */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2 border-t border-ink/10">
+                    <MetricDiff
+                      label="Demographic Parity Diff"
+                      baseline={base.demographic_parity_difference}
+                      mitigated={mit.demographic_parity_difference}
+                      reduction={imp.dp_diff_reduction}
+                      lowerBetter
+                    />
+                    <MetricDiff
+                      label="Equalized Odds Diff"
+                      baseline={base.equalized_odds_difference}
+                      mitigated={mit.equalized_odds_difference}
+                      reduction={imp.eo_diff_reduction}
+                      lowerBetter
+                    />
+                    <MetricDiff
+                      label="False Positive Rate Diff"
+                      baseline={base.false_positive_rate_difference}
+                      mitigated={mit.false_positive_rate_difference}
+                      reduction={imp.fpr_diff_reduction}
+                      lowerBetter
+                    />
+                    <MetricDiff
+                      label="Model Accuracy"
+                      baseline={base.accuracy}
+                      mitigated={mit.accuracy}
+                      reduction={imp.accuracy_change}
+                      isAccuracy
+                    />
                   </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
@@ -194,16 +296,23 @@ export default function DebiasingPage() {
   )
 }
 
-function InputArea({ label, value, onChange, placeholder }: any) {
+function MetricDiff({ label, baseline, mitigated, reduction, lowerBetter, isAccuracy }: any) {
+  if (baseline === undefined || mitigated === undefined) return null
+
+  const diff = mitigated - baseline
+  const improved = isAccuracy ? diff >= 0 : diff < 0
+
   return (
-    <div className="space-y-2 mb-4">
-      <label className="block text-xs font-medium mb-1 text-ink-soft">{label}</label>
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full h-16 p-2 rounded-lg border border-ink/10 bg-white/50 font-mono text-xs resize-none focus:outline-none focus:ring-2 focus:ring-accent/30"
-      />
+    <div className="bg-white/60 rounded-xl p-4 border border-ink/5">
+      <div className="text-xs text-ink-soft mb-1">{label}</div>
+      <div className="text-lg font-bold font-display text-ink flex items-baseline gap-2">
+        <span>{baseline.toFixed(3)}</span>
+        <span className="text-xs text-ink-soft font-normal">→</span>
+        <span>{mitigated.toFixed(3)}</span>
+      </div>
+      <div className={'text-xs mt-1 font-medium ' + (improved ? 'text-green-700' : 'text-amber-700')}>
+        {isAccuracy ? (diff >= 0 ? `+${(diff * 100).toFixed(1)}% accuracy` : `${(diff * 100).toFixed(1)}% accuracy`) : (diff <= 0 ? `Reduced by ${Math.abs(diff).toFixed(3)}` : `Increased by ${Math.abs(diff).toFixed(3)}`)}
+      </div>
     </div>
   )
 }
